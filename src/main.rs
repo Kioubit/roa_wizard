@@ -30,50 +30,26 @@ fn main() {
 
     match action.as_str() {
         "v4" => {
-            let handler = process(false, base_path.to_owned());
-            let result = handler.join().expect("thread failed");
-            match result {
-                Ok(v) => {
-                    print_bird(v);
-                },
-                Err(e) => {
-                    eprintln!("{:#}",e);
-                }
-            }
+            print_bird(process(false, base_path));
         },
         "v6" => {
-            let handler = process(true, base_path.to_owned());
-            let result = handler.join().expect("thread failed");
-            match result {
-                Ok(v) => {
-                    print_bird(v);
-                },
-                Err(e) => {
-                    eprintln!("{:#}",e);
-                }
-            }
+            print_bird(process(true, base_path));
         },
         "json" => {
-            let handler = process(true, base_path.to_owned());
-            let result = handler.join().expect("thread failed");
-            match result {
-                Ok(mut v) => {
-                    let handler = process(true, base_path.to_owned());
-                    let result = handler.join().expect("thread failed");
-                    match result {
-                        Ok(mut d) => {
-                            d.append(&mut v);
-                            print_json(d);
-                        },
-                        Err(e) => {
-                            eprintln!("{:#}",e);
-                        }
-                    }
-                },
-                Err(e) => {
-                    eprintln!("{:#}",e);
-                }
+            let handler_v4 = process_handler(false, base_path.to_owned());
+            let handler_v6 = process_handler(true, base_path.to_owned());
+            let mut result_v4 = handler_v4.join().expect("thread failed");
+            let result_v6 = handler_v6.join().expect("thread failed");
+            if result_v4.is_err() {
+                eprintln!("{}", result_v4.unwrap_err());
+                exit(1);
             }
+            if result_v6.is_err() {
+                eprintln!("{}", result_v6.unwrap_err());
+                exit(1);
+            }
+            result_v4.as_mut().unwrap().append(result_v6.unwrap().as_mut());
+            print_json(result_v4.unwrap());
         },
         _ => {
             println!("Second argument is unknown");
@@ -83,8 +59,17 @@ fn main() {
 }
 
 
+fn process(is_v6: bool, base_path: String) -> Vec<RouteObject> {
+    let handler = process_handler(is_v6, base_path.to_owned());
+    let result = handler.join().expect("thread failed");
+    if result.is_err() {
+        eprintln!("{}", result.unwrap_err());
+        exit(1);
+    }
+    return result.unwrap();
+}
 
-fn process(is_v6: bool, base_path: String) -> JoinHandle<Result<Vec<RouteObject>, Box<dyn Error + Send + Sync>>> {
+fn process_handler(is_v6: bool, base_path: String) -> JoinHandle<Result<Vec<RouteObject>, Box<dyn Error + Send + Sync>>> {
     let route_directory :String;
     let filter_txt: String;
 
