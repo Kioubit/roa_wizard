@@ -20,7 +20,6 @@ fn show_usage() {
 }
 
 fn main() {
-    //let base_path: &str = "/home/main/Desktop/registry/";
     if std::env::args().len() == 1 {
         show_usage();
     }
