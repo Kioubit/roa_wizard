@@ -39,35 +39,29 @@ pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[Fil
             return false;
         }
 
-        let max_allowed_max_length = applicable_filter_set.unwrap().max_len;
+        let filter_max_length = applicable_filter_set.unwrap().max_len;
+        let filter_min_length = applicable_filter_set.unwrap().min_len;
         let applicable_max_length: i32;
 
 
-        if let Some(obj_max_length) = v.max_length.get(){
-            if v.origins.len() == 1  && v.origins.get(0).unwrap_or(&"".to_owned()) == "0" {
-                v.max_length.set(Some(max_allowed_max_length));
-                return true;
+        if let Some(mut obj_max_length) = v.max_length.get(){
+            if obj_max_length > filter_max_length {
+                obj_max_length = filter_max_length;
+                v.max_length.set(Some(filter_max_length));
             }
-            if obj_max_length > max_allowed_max_length {
-                return false;
-            }
-            if obj_max_length < applicable_filter_set.unwrap().min_len {
-                return false;
+            if obj_max_length < filter_min_length {
+                obj_max_length = filter_min_length;
+                v.max_length.set(Some(filter_min_length));
             }
             applicable_max_length = obj_max_length;
         } else {
-            v.max_length.set(Some(max_allowed_max_length));
-            applicable_max_length = max_allowed_max_length;
+            v.max_length.set(Some(filter_max_length));
+            applicable_max_length = filter_max_length;
         }
 
         if (bits as i32) > applicable_max_length {
             return false;
         }
-
-        //if (bits as i32) < applicable_filter_set.unwrap().min_len {
-        // Expected
-        //   return false;
-        //}
         true
     })
 }
@@ -260,7 +254,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
         let mut object = RouteObjectBuilder::new(filename.to_owned(), is_v6);
         for line in lines {
             if let Some(result) = line?.split_once(':') {
-                match result.0.trim() {
+                match result.0.trim_end() {
                     "route" => { object.prefix_v4 = Some(result.1.trim().to_owned()) }
                     "route6" => { object.prefix_v6 = Some(result.1.trim().to_owned()) }
                     "origin" => { object.origins.push(result.1.trim().to_owned()) }
