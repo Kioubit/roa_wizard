@@ -36,7 +36,7 @@ fn main() {
         },
         "json" => {
             let handler_v4 = process_handler(false, base_path.to_owned());
-            let handler_v6 = process_handler(true, base_path.to_owned());
+            let handler_v6 = process_handler(true, base_path);
             let mut result_v4 = handler_v4.join().expect("thread failed");
             let result_v6 = handler_v6.join().expect("thread failed");
             if result_v4.is_err() {
@@ -59,13 +59,13 @@ fn main() {
 
 
 fn process(is_v6: bool, base_path: String) -> Vec<RouteObject> {
-    let handler = process_handler(is_v6, base_path.to_owned());
+    let handler = process_handler(is_v6, base_path);
     let result = handler.join().expect("thread failed");
     if result.is_err() {
         eprintln!("{}", result.unwrap_err());
         exit(1);
     }
-    return result.unwrap();
+    result.unwrap()
 }
 
 fn process_handler(is_v6: bool, base_path: String) -> JoinHandle<Result<Vec<RouteObject>, Box<dyn Error + Send + Sync>>> {
@@ -75,13 +75,13 @@ fn process_handler(is_v6: bool, base_path: String) -> JoinHandle<Result<Vec<Rout
     match is_v6 {
         true => {
             let route6_directory = base_path.to_owned() + "data/route6/";
-            let filter6_txt = base_path.to_owned() + "data/filter6.txt";
+            let filter6_txt = base_path + "data/filter6.txt";
             route_directory = route6_directory;
             filter_txt = filter6_txt;
         }
         false => {
             let route4_directory = base_path.to_owned() + "data/route/";
-            let filter4_txt = base_path.to_owned() + "data/filter.txt";
+            let filter4_txt = base_path + "data/filter.txt";
             route_directory = route4_directory;
             filter_txt = filter4_txt;
         }

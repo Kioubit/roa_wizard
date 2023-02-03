@@ -3,7 +3,7 @@ use crate::parse::RouteObject;
 
 pub fn print_bird(objects : Vec<RouteObject>) {
     println!("# roa_wizard - Kioubit.dn42");
-    println!("# Created: {}",get_sys_time_in_secs().to_string());
+    println!("# Created: {}",get_sys_time_in_secs());
     for object in objects {
        print!("{}",object.display_bird());
     }
@@ -16,7 +16,7 @@ pub fn print_json(objects : Vec<RouteObject>) {
     let mut data = json::JsonValue::new_array();
     let mut count = 0;
     for object in objects {
-        for v in object.to_json() {
+        for v in object.get_json_objects() {
             data.push(v).expect("Error converting data to JSON");
             count+=1;
         }
