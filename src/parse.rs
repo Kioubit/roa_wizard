@@ -1,17 +1,16 @@
 use std::cell::Cell;
-use std::error::Error;
 use std::fs::{File, read_dir};
 use std::io;
 use std::io::BufRead;
 use std::net::IpAddr;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use cidr_utils::cidr::{IpCidr, Ipv4Cidr, Ipv6Cidr};
 use json::JsonValue;
 
 extern crate cidr_utils;
 
-
-type BoxResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+pub static STRICT_MODE: AtomicBool = AtomicBool::new(false);
 
 pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[FilterSet], is_v6: bool) {
     object_list.retain(|v| {
@@ -77,27 +76,31 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>) -> BoxResult<Self> {
+    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>)  -> Result<Self,String>{
         let result = Self {
-            priority: priority.ok_or("priority value missing")?.parse::<i32>()?,
+            priority: priority.ok_or("priority value missing")?.parse::<i32>().ok().ok_or("Failed to parse priority as i32")?,
             allow: allow.ok_or("allow value missing")? == "permit",
-            prefix: IpCidr::from_str(prefix.ok_or("invalid prefix")?)?,
-            min_len: min_len.ok_or("min_len value missing")?.parse::<i32>()?,
-            max_len: max_len.ok_or("max_len value missing")?.parse::<i32>()?,
+            prefix: IpCidr::from_str(prefix.ok_or("invalid prefix")?).ok().ok_or("Failed to parse prefix")?,
+            min_len: min_len.ok_or("min_len value missing")?.parse::<i32>().ok().ok_or("Failed to parse min_length as i32")?,
+            max_len: max_len.ok_or("max_len value missing")?.parse::<i32>().ok().ok_or("Failed to parse max_length as i32")?,
         };
         Ok(result)
     }
 }
 
-pub fn read_filter_set(file: String) -> BoxResult<Vec<FilterSet>> {
+pub fn read_filter_set(file: String) -> Result<Vec<FilterSet>,String> {
     let mut set: Vec<FilterSet> = Vec::new();
-    let lines = read_lines(&file)?;
-    for line in lines {
-        let line_owned = line?.to_owned();
-        if line_owned.starts_with('#') || line_owned.is_empty() {
+    let lines = read_lines(&file).map_err(|e|
+        format!("Error reading filter set file: {}",e)
+    )?;
+    for line_result in lines {
+        let line = line_result.map_err(|e|
+            format!("Error reading filter set line: {}",e)
+        )?;
+        if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        let mut entries_iter = line_owned.split_whitespace();
+        let mut entries_iter = line.split_whitespace();
         let priority = entries_iter.next();
         let allow = entries_iter.next();
         let prefix = entries_iter.next();
@@ -110,7 +113,11 @@ pub fn read_filter_set(file: String) -> BoxResult<Vec<FilterSet>> {
                 set.push(r)
             }
             Err(err) => {
-                eprintln!("Failed to parse filter.txt line: {}", err)
+                let error_message = format!("Failed to parse filter.txt line: {} Error: {}",line, err);
+                if STRICT_MODE.load(Ordering::Relaxed) {
+                   return Err(error_message)
+                }
+                eprintln!("{}", error_message)
             }
         }
     }
@@ -160,7 +167,7 @@ impl RouteObject {
     }
 }
 
-pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<Vec<RouteObject>,String> where P: AsRef<Path> {
     #[derive(Debug)]
     struct RouteObjectBuilder<> {
         filename: String,
@@ -181,7 +188,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
                 is_v6,
             }
         }
-        fn validate_and_build(mut self) -> BoxResult<RouteObject> {
+        fn validate_and_build(mut self) -> Result<RouteObject,String> {
             if self.origins.is_empty() {
                 return Err("missing origin field in object")?;
             }
@@ -212,7 +219,9 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
                 if self.filename.replace('_', "/") != self.prefix_v6.as_deref().unwrap() {
                     return Err("filename does not equal prefix field")?;
                 }
-                prefix_v6 = Some(Ipv6Cidr::from_str(self.prefix_v6.unwrap())?)
+                prefix_v6 = Some(Ipv6Cidr::from_str(self.prefix_v6.unwrap()).map_err(|e|
+                    format!("Unable to parse IPv6 CIDR: {}", e)
+                )?)
             } else {
                 if self.prefix_v4.is_none() {
                     return Err("missing route field in object")?;
@@ -220,20 +229,18 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
                 if self.filename.replace('_', "/") != self.prefix_v4.as_deref().unwrap() {
                     return Err("filename does not equal prefix field")?;
                 }
-                prefix_v4 = Some(Ipv4Cidr::from_str(self.prefix_v4.unwrap())?)
+                prefix_v4 = Some(Ipv4Cidr::from_str(self.prefix_v4.unwrap()).map_err(|e|
+                    format!("Unable to parse IPv4 CIDR: {}", e)
+                )?)
             }
 
-            let max_length = if let Some(max_length) = self.max_length {
-                let parse_result = max_length.parse::<i32>();
-                if let Ok(parsed) = parse_result {
-                    Some(parsed)
+            let max_length = self.max_length.map_or(Ok(None), |s|
+                if let Ok(parsed) = s.parse::<i32>() {
+                    Ok(Some(parsed))
                 } else {
-                    eprintln!("failed to parse max_length value");
-                    None
+                    Err("Failed to parse max_length value as i32")
                 }
-            } else {
-                None
-            };
+            )?;
 
             let result = RouteObject {
                 prefix_v6,
@@ -246,14 +253,22 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
     }
 
     let mut objects: Vec<RouteObject> = Vec::new();
-    let dir = read_dir(path)?;
+    let dir = read_dir(path).map_err(|e|
+        format!("Unable to read directory: {}", e)
+    )?;
     for file_result in dir {
-        let file = file_result?.path();
-        let lines = read_lines(&file)?;
+        let file = file_result.map_err(|e|
+            format!("Unable to read directory file: {}", e)
+        )?.path();
+        let lines = read_lines(&file).map_err(|e|
+            format!("Unable to open file: {}", e)
+        )?;
         let filename = file.as_path().file_name().unwrap_or_default().to_str().unwrap_or_default().to_owned();
         let mut object = RouteObjectBuilder::new(filename.to_owned(), is_v6);
         for line in lines {
-            if let Some(result) = line?.split_once(':') {
+            if let Some(result) = line.map_err(|e|
+                format!("Unable to read file line: {}", e)
+            )?.split_once(':') {
                 match result.0.trim_end() {
                     "route" => { object.prefix_v4 = Some(result.1.trim().to_owned()) }
                     "route6" => { object.prefix_v6 = Some(result.1.trim().to_owned()) }
@@ -268,7 +283,11 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> BoxResult<Vec<RouteObject>
                 objects.push(result);
             }
             Err(err) => {
-                eprintln!("For file: {} {}", filename, err)
+                let error_message = format!("Error in file: {}: {}", filename, err);
+                if STRICT_MODE.load(Ordering::Relaxed) {
+                    return Err(error_message)
+                }
+                eprintln!("{}",error_message)
             }
         }
     };

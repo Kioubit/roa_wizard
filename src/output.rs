@@ -1,15 +1,16 @@
-use std::time::SystemTime;
 use crate::parse::RouteObject;
+use std::time::SystemTime;
+use crate::VERSION;
 
-pub fn print_bird(objects : Vec<RouteObject>) {
-    println!("# roa_wizard - Kioubit.dn42");
-    println!("# Created: {}",get_sys_time_in_secs());
+pub fn print_bird(objects: Vec<RouteObject>) {
+    println!("# roa_wizard {} - Kioubit.dn42", VERSION);
+    println!("# Created: {}", get_sys_time_in_secs());
     for object in objects {
-       print!("{}",object.display_bird());
+        print!("{}", object.display_bird());
     }
 }
 
-pub fn print_json(objects : Vec<RouteObject>) {
+pub fn print_json(objects: Vec<RouteObject>) {
     let mut top = json::JsonValue::new_object();
     let mut metadata = json::JsonValue::new_object();
 
@@ -18,7 +19,7 @@ pub fn print_json(objects : Vec<RouteObject>) {
     for object in objects {
         for v in object.get_json_objects() {
             data.push(v).expect("Error converting data to JSON");
-            count+=1;
+            count += 1;
         }
     }
 
@@ -30,7 +31,7 @@ pub fn print_json(objects : Vec<RouteObject>) {
     top["metadata"] = metadata;
     top["roas"] = data;
 
-    println!("{}",top.dump());
+    println!("{}", top.dump());
 }
 
 fn get_sys_time_in_secs() -> u64 {
