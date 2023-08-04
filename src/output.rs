@@ -26,7 +26,7 @@ pub fn print_json(objects: Vec<RouteObject>) {
     metadata["counts"] = count.into();
     let now = get_sys_time_in_secs();
     metadata["generated"] = now.into();
-    metadata["valid"] = (now + 86400).into();
+    metadata["valid"] = (now + 604800).into(); // 7 days
 
     top["metadata"] = metadata;
     top["roas"] = data;
