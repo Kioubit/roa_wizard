@@ -1,12 +1,13 @@
 use crate::parse::RouteObject;
 use std::time::SystemTime;
-use crate::VERSION;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn print_bird(objects: Vec<RouteObject>) {
     println!("# roa_wizard {} - Kioubit.dn42", VERSION);
     println!("# Created: {}", get_sys_time_in_secs());
     for object in objects {
-        print!("{}", object.display_bird());
+        print!("{}", object.get_bird_format());
     }
 }
 
@@ -35,8 +36,5 @@ pub fn print_json(objects: Vec<RouteObject>) {
 }
 
 fn get_sys_time_in_secs() -> u64 {
-    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(n) => n.as_secs(),
-        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-    }
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs()
 }

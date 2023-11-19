@@ -4,13 +4,11 @@ use std::io;
 use std::io::BufRead;
 use std::net::IpAddr;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use cidr_utils::cidr::{IpCidr, Ipv4Cidr, Ipv6Cidr};
 use json::JsonValue;
 
 extern crate cidr_utils;
 
-pub static STRICT_MODE: AtomicBool = AtomicBool::new(false);
 
 pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[FilterSet], is_v6: bool) {
     object_list.retain(|v| {
@@ -88,7 +86,8 @@ impl FilterSet {
     }
 }
 
-pub fn read_filter_set(file: String) -> Result<Vec<FilterSet>,String> {
+pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>),String> {
+    let mut warnings: Vec<String> = Vec::new();
     let mut set: Vec<FilterSet> = Vec::new();
     let lines = read_lines(&file).map_err(|e|
         format!("Error reading filter set file: {}",e)
@@ -114,16 +113,13 @@ pub fn read_filter_set(file: String) -> Result<Vec<FilterSet>,String> {
             }
             Err(err) => {
                 let error_message = format!("Failed to parse filter.txt line: {} Error: {}",line, err);
-                if STRICT_MODE.load(Ordering::Relaxed) {
-                   return Err(error_message)
-                }
-                eprintln!("{}", error_message)
+                warnings.push(error_message);
             }
         }
     }
 
     set.sort_by(|a, b| a.priority.cmp(&b.priority));
-    Ok(set)
+    Ok((set,warnings))
 }
 
 
@@ -136,38 +132,36 @@ pub struct RouteObject {
 }
 
 impl RouteObject {
-    pub fn display_bird(self) -> String {
-        let str_prefix: String = if self.prefix_v6.is_some() {
+    fn prefix_string(&self) -> String {
+        if self.prefix_v6.is_some() {
             self.prefix_v6.unwrap().to_string()
         } else {
             self.prefix_v4.unwrap().to_string()
-        };
+        }
+    }
+
+    pub fn get_bird_format(self) -> String {
         let mut result: String = "".to_owned();
-        for origin in self.origins {
-            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = str_prefix,
+        for origin in &self.origins {
+            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = self.prefix_string(),
                                       max_length = self.max_length.get().unwrap(), origin = origin));
         }
         result
     }
     pub fn get_json_objects(self) -> Vec<JsonValue> {
-        let str_prefix: String = if self.prefix_v6.is_some() {
-            self.prefix_v6.unwrap().to_string()
-        } else {
-            self.prefix_v4.unwrap().to_string()
-        };
         let mut result :Vec<JsonValue> = Vec::new();
-        for origin in self.origins {
+        for origin in &self.origins {
             let mut data = JsonValue::new_object();
-            data["prefix"] = str_prefix.to_owned().into();
+            data["prefix"] = self.prefix_string().to_owned().into();
             data["maxLength"] = self.max_length.get().unwrap().into();
-            data["asn"] = origin.into();
+            data["asn"] = origin.to_owned().into();
             result.push(data);
         }
         result
     }
 }
 
-pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<Vec<RouteObject>,String> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, Vec<String>),String> where P: AsRef<Path> {
     #[derive(Debug)]
     struct RouteObjectBuilder<> {
         filename: String,
@@ -253,6 +247,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<Vec<RouteObject>,St
     }
 
     let mut objects: Vec<RouteObject> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     let dir = read_dir(path).map_err(|e|
         format!("Unable to read directory: {}", e)
     )?;
@@ -284,14 +279,11 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<Vec<RouteObject>,St
             }
             Err(err) => {
                 let error_message = format!("Error in file: {}: {}", filename, err);
-                if STRICT_MODE.load(Ordering::Relaxed) {
-                    return Err(error_message)
-                }
-                eprintln!("{}",error_message)
+                warnings.push(error_message);
             }
         }
     };
-    Ok(objects)
+    Ok((objects, warnings))
 }
 
 
