@@ -6,6 +6,7 @@ use std::path::Path;
 use std::str::FromStr;
 use cidr_utils::cidr::IpCidr;
 use json::JsonValue;
+use crate::RouteObjectsWithWarnings;
 
 extern crate cidr_utils;
 
@@ -36,7 +37,7 @@ pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[Fil
         let applicable_max_length: i32;
 
 
-        if let Some(mut obj_max_length) = v.max_length.get(){
+        if let Some(mut obj_max_length) = v.max_length.get() {
             if obj_max_length > filter_max_length {
                 obj_max_length = filter_max_length;
                 v.max_length.set(Some(filter_max_length));
@@ -69,7 +70,7 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>)  -> Result<Self,String>{
+    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>) -> Result<Self, String> {
         let result = Self {
             priority: priority.ok_or("priority value missing")?.parse::<i32>().ok().ok_or("Failed to parse priority as i32")?,
             allow: allow.ok_or("allow value missing")? == "permit",
@@ -81,15 +82,15 @@ impl FilterSet {
     }
 }
 
-pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>),String> {
+pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>), String> {
     let mut warnings: Vec<String> = Vec::new();
     let mut set: Vec<FilterSet> = Vec::new();
     let lines = read_lines(file).map_err(|e|
-        format!("Error reading filter set file: {}",e)
+        format!("Error reading filter set file: {}", e)
     )?;
     for line_result in lines {
         let line = line_result.map_err(|e|
-            format!("Error reading filter set line: {}",e)
+            format!("Error reading filter set line: {}", e)
         )?;
         if line.starts_with('#') || line.is_empty() {
             continue;
@@ -107,14 +108,14 @@ pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>),Str
                 set.push(r)
             }
             Err(err) => {
-                let error_message = format!("Failed to parse filter.txt line: {} Error: {}",line, err);
+                let error_message = format!("Failed to parse filter.txt line: {} Error: {}", line, err);
                 warnings.push(error_message);
             }
         }
     }
 
     set.sort_by(|a, b| a.priority.cmp(&b.priority));
-    Ok((set,warnings))
+    Ok((set, warnings))
 }
 
 
@@ -129,25 +130,36 @@ impl RouteObject {
     pub fn get_bird_format(self) -> String {
         let mut result: String = "".to_owned();
         for origin in &self.origins {
-            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = self.prefix.unwrap(),
-                                      max_length = self.max_length.get().unwrap(), origin = origin));
+            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = self.get_prefix_string(),
+                                     max_length = self.max_length.get().unwrap(), origin = origin));
         }
         result
     }
     pub fn get_json_objects(self) -> Vec<JsonValue> {
-        let mut result :Vec<JsonValue> = Vec::new();
+        let mut result: Vec<JsonValue> = Vec::new();
         for origin in &self.origins {
             let mut data = JsonValue::new_object();
-            data["prefix"] = self.prefix.unwrap().to_string().to_owned().into();
+            data["prefix"] = self.get_prefix_string().into();
             data["maxLength"] = self.max_length.get().unwrap().into();
             data["asn"] = origin.to_owned().into();
             result.push(data);
         }
         result
     }
+
+    fn get_prefix_string(&self) -> String {
+        if self.prefix.unwrap().is_host_address() {
+            return if self.prefix.unwrap().is_ipv4() {
+                self.prefix.unwrap().to_string() + "/32"
+            } else {
+                self.prefix.unwrap().to_string() + "/128"
+            }
+        }
+        self.prefix.unwrap().to_string()
+    }
 }
 
-pub fn read_route_objects<P>(path: P) -> Result<(Vec<RouteObject>, Vec<String>),String> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String> where P: AsRef<Path> {
     #[derive(Debug)]
     struct RouteObjectBuilder<> {
         filename: String,
@@ -164,7 +176,7 @@ pub fn read_route_objects<P>(path: P) -> Result<(Vec<RouteObject>, Vec<String>),
                 max_length: None,
             }
         }
-        fn validate_and_build(mut self) -> Result<RouteObject,String> {
+        fn validate_and_build(mut self) -> Result<RouteObject, String> {
             if self.origins.is_empty() {
                 return Err("missing origin field in object")?;
             }
@@ -176,7 +188,7 @@ pub fn read_route_objects<P>(path: P) -> Result<(Vec<RouteObject>, Vec<String>),
             }
 
             self.origins.iter_mut().for_each(|x| {
-                *x = x.replace("AS","");
+                *x = x.replace("AS", "");
             });
 
             for origin in &self.origins {
@@ -202,7 +214,7 @@ pub fn read_route_objects<P>(path: P) -> Result<(Vec<RouteObject>, Vec<String>),
                     Ok(Some(parsed))
                 } else {
                     Err("Failed to parse max_length value as i32")
-                }
+                },
             )?;
 
             let result = RouteObject {

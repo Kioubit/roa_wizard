@@ -1,17 +1,17 @@
 use crate::parse::RouteObject;
 use std::time::SystemTime;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn print_bird(objects: Vec<RouteObject>) {
-    println!("# roa_wizard {} - Kioubit.dn42", VERSION);
-    println!("# Created: {}", get_sys_time_in_secs());
+pub fn output_bird(objects: Vec<RouteObject>) -> String {
+    let mut result = format!("# roa_wizard {} - Kioubit.dn42\n", crate::VERSION);
+    result.push_str(&format!("# Created: {}\n", get_sys_time_in_secs()));
     for object in objects {
-        print!("{}", object.get_bird_format());
+        result.push_str(&object.get_bird_format());
     }
+    result
 }
 
-pub fn print_json(objects: Vec<RouteObject>) {
+pub fn output_json(objects: Vec<RouteObject>) -> String {
     let mut top = json::JsonValue::new_object();
     let mut metadata = json::JsonValue::new_object();
 
@@ -32,7 +32,7 @@ pub fn print_json(objects: Vec<RouteObject>) {
     top["metadata"] = metadata;
     top["roas"] = data;
 
-    println!("{}", top.dump());
+    top.dump()
 }
 
 fn get_sys_time_in_secs() -> u64 {

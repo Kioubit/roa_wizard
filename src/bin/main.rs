@@ -1,7 +1,5 @@
 use std::process::exit;
-use roa_wizard_lib::{generate_bird, generate_json};
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use roa_wizard_lib::{generate_bird, generate_json, VERSION};
 
 fn show_usage() {
     println!("roa_wizard {}", VERSION);
@@ -28,21 +26,39 @@ fn main() {
     let action = std::env::args().nth(2).expect("no action given");
     let strict = std::env::args().nth(3).unwrap_or_default() == "strict";
 
-
     match action.as_str() {
         "v4" => {
-            generate_bird(base_path,strict,false);
+            check_and_output(generate_bird(base_path, false), strict);
         }
         "v6" => {
-            generate_bird(base_path,strict,true);
+            check_and_output(generate_bird(base_path, true), strict);
         }
         "json" => {
-            generate_json(base_path,strict);
+            check_and_output(generate_json(base_path), strict);
         }
         _ => {
             println!("unknown argument for <action>");
             show_usage();
         }
     }
+}
+
+
+fn check_and_output(result: Result<(String, Vec<String>), String>, strict: bool) {
+    if result.is_err() {
+        eprintln!("Error: {}", result.unwrap_err());
+        exit(1)
+    }
+    let (output, warnings) = result.unwrap();
+    let mut had_warning: bool = false;
+    for warning in warnings {
+        eprintln!("Warning: {}", warning);
+        had_warning = true;
+    }
+    if strict && had_warning {
+        eprintln!("Warnings occurred and strict mode is enabled");
+        exit(1)
+    }
+    print!("{}", output);
 }
 
