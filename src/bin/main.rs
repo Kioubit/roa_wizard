@@ -1,5 +1,5 @@
 use std::process::exit;
-use roa_wizard_lib::{generate_bird, generate_json, VERSION};
+use roa_wizard_lib::{check_and_output, generate_bird, generate_json, VERSION};
 
 fn show_usage() {
     println!("roa_wizard {}", VERSION);
@@ -44,21 +44,4 @@ fn main() {
 }
 
 
-fn check_and_output(result: Result<(String, Vec<String>), String>, strict: bool) {
-    if result.is_err() {
-        eprintln!("Error: {}", result.unwrap_err());
-        exit(1)
-    }
-    let (output, warnings) = result.unwrap();
-    let mut had_warning: bool = false;
-    for warning in warnings {
-        eprintln!("Warning: {}", warning);
-        had_warning = true;
-    }
-    if strict && had_warning {
-        eprintln!("Warnings occurred and strict mode is enabled");
-        exit(1)
-    }
-    print!("{}", output);
-}
 

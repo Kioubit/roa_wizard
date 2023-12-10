@@ -1,6 +1,7 @@
 mod parse;
 mod output;
 
+use std::process::exit;
 use crate::output::{output_bird, output_json};
 use crate::parse::{evaluate_filter_set, read_filter_set, read_route_objects, RouteObject};
 use std::thread;
@@ -58,4 +59,22 @@ fn process_handler(is_v6: bool, base_path: String) -> JoinHandle<Result<RouteObj
     thread::spawn(move || {
         process(is_v6, base_path)
     })
+}
+
+pub fn check_and_output(result: Result<(String, Vec<String>), String>, strict: bool) {
+    if result.is_err() {
+        eprintln!("Error: {}", result.unwrap_err());
+        exit(1)
+    }
+    let (output, warnings) = result.unwrap();
+    let mut had_warning: bool = false;
+    for warning in warnings {
+        eprintln!("Warning: {}", warning);
+        had_warning = true;
+    }
+    if strict && had_warning {
+        eprintln!("Warnings occurred and strict mode is enabled");
+        exit(1)
+    }
+    print!("{}", output);
 }
