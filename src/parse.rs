@@ -2,28 +2,22 @@ use std::cell::Cell;
 use std::fs::{File, read_dir};
 use std::io;
 use std::io::BufRead;
-use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
-use cidr_utils::cidr::{IpCidr, Ipv4Cidr, Ipv6Cidr};
+use cidr_utils::cidr::IpCidr;
 use json::JsonValue;
 
 extern crate cidr_utils;
 
 
-pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[FilterSet], is_v6: bool) {
+pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[FilterSet]) {
     object_list.retain(|v| {
         let mut filter_set_iter = filter_set.iter();
         let mut bits: u8 = 0;
         let applicable_filter_set = filter_set_iter.find(|f| {
-            if is_v6 {
-                if f.prefix.contains(&IpAddr::V6(v.prefix_v6.unwrap().first_address())) && f.prefix.contains(&IpAddr::V6(v.prefix_v6.unwrap().last_address())) {
-                    bits = v.prefix_v6.unwrap().network_length();
-                    return true;
-                }
-            } else if f.prefix.contains(&IpAddr::V4(v.prefix_v4.unwrap().first_address())) && f.prefix.contains(&IpAddr::V4(v.prefix_v4.unwrap().last_address())) {
-                    bits = v.prefix_v4.unwrap().network_length();
-                    return true;
+            if f.prefix.contains(&v.prefix.unwrap().first_address()) && f.prefix.contains(&v.prefix.unwrap().last_address()) {
+                bits = v.prefix.unwrap().network_length();
+                return true;
             }
             false
         });
@@ -126,25 +120,16 @@ pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>),Str
 
 #[derive(Debug)]
 pub struct RouteObject {
-    prefix_v4: Option<Ipv4Cidr>,
-    prefix_v6: Option<Ipv6Cidr>,
+    prefix: Option<IpCidr>,
     origins: Vec<String>,
     max_length: Cell<Option<i32>>,
 }
 
 impl RouteObject {
-    fn prefix_string(&self) -> String {
-        if self.prefix_v6.is_some() {
-            self.prefix_v6.unwrap().to_string()
-        } else {
-            self.prefix_v4.unwrap().to_string()
-        }
-    }
-
     pub fn get_bird_format(self) -> String {
         let mut result: String = "".to_owned();
         for origin in &self.origins {
-            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = self.prefix_string(),
+            result.push_str(&format!("route {prefix} max {max_length} as {origin};\n", prefix = self.prefix.unwrap(),
                                       max_length = self.max_length.get().unwrap(), origin = origin));
         }
         result
@@ -153,7 +138,7 @@ impl RouteObject {
         let mut result :Vec<JsonValue> = Vec::new();
         for origin in &self.origins {
             let mut data = JsonValue::new_object();
-            data["prefix"] = self.prefix_string().to_owned().into();
+            data["prefix"] = self.prefix.unwrap().to_string().to_owned().into();
             data["maxLength"] = self.max_length.get().unwrap().into();
             data["asn"] = origin.to_owned().into();
             result.push(data);
@@ -162,25 +147,21 @@ impl RouteObject {
     }
 }
 
-pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, Vec<String>),String> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P) -> Result<(Vec<RouteObject>, Vec<String>),String> where P: AsRef<Path> {
     #[derive(Debug)]
     struct RouteObjectBuilder<> {
         filename: String,
-        prefix_v4: Option<String>,
-        prefix_v6: Option<String>,
+        prefix: Option<String>,
         origins: Vec<String>,
         max_length: Option<String>,
-        is_v6: bool,
     }
     impl RouteObjectBuilder {
-        fn new(filename: String, is_v6: bool) -> Self {
+        fn new(filename: String) -> Self {
             Self {
                 filename,
-                prefix_v4: None,
-                prefix_v6: None,
+                prefix: None,
                 origins: Vec::new(),
                 max_length: None,
-                is_v6,
             }
         }
         fn validate_and_build(mut self) -> Result<RouteObject,String> {
@@ -204,30 +185,17 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, 
                 }
             }
 
-            let mut prefix_v4 = None;
-            let mut prefix_v6 = None;
 
-            if self.is_v6 {
-                if self.prefix_v6.is_none() {
-                    return Err("missing route field in object")?;
-                }
-                if self.filename.replace('_', "/") != self.prefix_v6.as_deref().unwrap() {
-                    return Err("filename does not equal prefix field")?;
-                }
-                prefix_v6 = Some(Ipv6Cidr::from_str(&self.prefix_v6.unwrap()).map_err(|e|
-                    format!("Unable to parse IPv6 CIDR: {}", e)
-                )?)
-            } else {
-                if self.prefix_v4.is_none() {
-                    return Err("missing route field in object")?;
-                }
-                if self.filename.replace('_', "/") != self.prefix_v4.as_deref().unwrap() {
-                    return Err("filename does not equal prefix field")?;
-                }
-                prefix_v4 = Some(Ipv4Cidr::from_str(&self.prefix_v4.unwrap()).map_err(|e|
-                    format!("Unable to parse IPv4 CIDR: {}", e)
-                )?)
+            if self.prefix.is_none() {
+                return Err("missing route field in object")?;
             }
+            if self.filename.replace('_', "/") != self.prefix.as_deref().unwrap() {
+                return Err("filename does not equal prefix field")?;
+            }
+            let prefix = Some(IpCidr::from_str(&self.prefix.unwrap()).map_err(|e|
+                format!("Unable to parse IP CIDR: {}", e)
+            )?);
+
 
             let max_length = self.max_length.map_or(Ok(None), |s|
                 if let Ok(parsed) = s.parse::<i32>() {
@@ -238,8 +206,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, 
             )?;
 
             let result = RouteObject {
-                prefix_v6,
-                prefix_v4,
+                prefix,
                 origins: self.origins,
                 max_length: Cell::new(max_length),
             };
@@ -260,14 +227,14 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, 
             format!("Unable to open file: {}", e)
         )?;
         let filename = file.as_path().file_name().unwrap_or_default().to_str().unwrap_or_default().to_owned();
-        let mut object = RouteObjectBuilder::new(filename.to_owned(), is_v6);
+        let mut object = RouteObjectBuilder::new(filename.to_owned());
         for line in lines {
             if let Some(result) = line.map_err(|e|
                 format!("Unable to read file line: {}", e)
             )?.split_once(':') {
                 match result.0.trim_end() {
-                    "route" => { object.prefix_v4 = Some(result.1.trim().to_owned()) }
-                    "route6" => { object.prefix_v6 = Some(result.1.trim().to_owned()) }
+                    "route" => { object.prefix = Some(result.1.trim().to_owned()) }
+                    "route6" => { object.prefix = Some(result.1.trim().to_owned()) }
                     "origin" => { object.origins.push(result.1.trim().to_owned()) }
                     "max-length" => { object.max_length = Some(result.1.trim().to_owned()) }
                     &_ => {}

@@ -55,12 +55,12 @@ fn process(is_v6: bool, base_path: String, strict: bool) -> Result<Vec<RouteObje
             filter_txt = filter4_txt;
         }
     }
-    let (mut objects, warnings) = read_route_objects(route_directory, is_v6)?;
+    let (mut objects, warnings) = read_route_objects(route_directory)?;
     check_warnings(warnings, strict)?;
     let (filters, warnings) = read_filter_set(filter_txt)?;
     check_warnings(warnings, strict)?;
 
-    evaluate_filter_set(objects.as_mut(), filters.as_ref(), is_v6);
+    evaluate_filter_set(objects.as_mut(), filters.as_ref());
     Ok(objects)
 }
 
