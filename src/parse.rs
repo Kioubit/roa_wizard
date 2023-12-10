@@ -4,6 +4,7 @@ use std::io;
 use std::io::BufRead;
 use std::net::IpAddr;
 use std::path::Path;
+use std::str::FromStr;
 use cidr_utils::cidr::{IpCidr, Ipv4Cidr, Ipv6Cidr};
 use json::JsonValue;
 
@@ -16,12 +17,12 @@ pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[Fil
         let mut bits: u8 = 0;
         let applicable_filter_set = filter_set_iter.find(|f| {
             if is_v6 {
-                if f.prefix.contains(IpAddr::V6(v.prefix_v6.unwrap().first_as_ipv6_addr())) && f.prefix.contains(IpAddr::V6(v.prefix_v6.unwrap().last_as_ipv6_addr())) {
-                    bits = v.prefix_v6.unwrap().get_bits();
+                if f.prefix.contains(&IpAddr::V6(v.prefix_v6.unwrap().first_address())) && f.prefix.contains(&IpAddr::V6(v.prefix_v6.unwrap().last_address())) {
+                    bits = v.prefix_v6.unwrap().network_length();
                     return true;
                 }
-            } else if f.prefix.contains(IpAddr::V4(v.prefix_v4.unwrap().first_as_ipv4_addr())) && f.prefix.contains(IpAddr::V4(v.prefix_v4.unwrap().last_as_ipv4_addr())) {
-                    bits = v.prefix_v4.unwrap().get_bits();
+            } else if f.prefix.contains(&IpAddr::V4(v.prefix_v4.unwrap().first_address())) && f.prefix.contains(&IpAddr::V4(v.prefix_v4.unwrap().last_address())) {
+                    bits = v.prefix_v4.unwrap().network_length();
                     return true;
             }
             false
@@ -89,7 +90,7 @@ impl FilterSet {
 pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>),String> {
     let mut warnings: Vec<String> = Vec::new();
     let mut set: Vec<FilterSet> = Vec::new();
-    let lines = read_lines(&file).map_err(|e|
+    let lines = read_lines(file).map_err(|e|
         format!("Error reading filter set file: {}",e)
     )?;
     for line_result in lines {
@@ -213,7 +214,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, 
                 if self.filename.replace('_', "/") != self.prefix_v6.as_deref().unwrap() {
                     return Err("filename does not equal prefix field")?;
                 }
-                prefix_v6 = Some(Ipv6Cidr::from_str(self.prefix_v6.unwrap()).map_err(|e|
+                prefix_v6 = Some(Ipv6Cidr::from_str(&self.prefix_v6.unwrap()).map_err(|e|
                     format!("Unable to parse IPv6 CIDR: {}", e)
                 )?)
             } else {
@@ -223,7 +224,7 @@ pub fn read_route_objects<P>(path: P, is_v6: bool) -> Result<(Vec<RouteObject>, 
                 if self.filename.replace('_', "/") != self.prefix_v4.as_deref().unwrap() {
                     return Err("filename does not equal prefix field")?;
                 }
-                prefix_v4 = Some(Ipv4Cidr::from_str(self.prefix_v4.unwrap()).map_err(|e|
+                prefix_v4 = Some(Ipv4Cidr::from_str(&self.prefix_v4.unwrap()).map_err(|e|
                     format!("Unable to parse IPv4 CIDR: {}", e)
                 )?)
             }
