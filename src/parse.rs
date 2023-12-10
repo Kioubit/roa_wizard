@@ -159,7 +159,7 @@ impl RouteObject {
     }
 }
 
-pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWithWarnings, String> where P: AsRef<Path> {
     #[derive(Debug)]
     struct RouteObjectBuilder<> {
         filename: String,
@@ -176,7 +176,7 @@ pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String
                 max_length: None,
             }
         }
-        fn validate_and_build(mut self) -> Result<RouteObject, String> {
+        fn validate_and_build(mut self, expect_v6: bool) -> Result<RouteObject, String> {
             if self.origins.is_empty() {
                 return Err("missing origin field in object")?;
             }
@@ -204,9 +204,15 @@ pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String
             if self.filename.replace('_', "/") != self.prefix.as_deref().unwrap() {
                 return Err("filename does not equal prefix field")?;
             }
-            let prefix = Some(IpCidr::from_str(&self.prefix.unwrap()).map_err(|e|
+            let prefix = IpCidr::from_str(&self.prefix.unwrap()).map_err(|e|
                 format!("Unable to parse IP CIDR: {}", e)
-            )?);
+            )?;
+
+            if prefix.is_ipv4() && expect_v6 {
+                return Err("expected IPv6 but found an IPv4 object")?;
+            } else if prefix.is_ipv6() && !expect_v6 {
+                return Err("expected IPv4 but found an IPv6 object")?;
+            }
 
 
             let max_length = self.max_length.map_or(Ok(None), |s|
@@ -218,7 +224,7 @@ pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String
             )?;
 
             let result = RouteObject {
-                prefix,
+                prefix: Some(prefix),
                 origins: self.origins,
                 max_length: Cell::new(max_length),
             };
@@ -253,7 +259,7 @@ pub fn read_route_objects<P>(path: P) -> Result<RouteObjectsWithWarnings, String
                 }
             }
         }
-        match object.validate_and_build() {
+        match object.validate_and_build(expect_v6) {
             Ok(result) => {
                 objects.push(result);
             }

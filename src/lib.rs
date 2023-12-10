@@ -47,7 +47,7 @@ fn process(is_v6: bool, base_path: String) -> Result<RouteObjectsWithWarnings, S
             filter_txt = filter4_txt;
         }
     }
-    let (mut objects, mut warnings) = read_route_objects(route_directory)?;
+    let (mut objects, mut warnings) = read_route_objects(route_directory, is_v6)?;
     let (filters, mut warnings_filter) = read_filter_set(filter_txt)?;
     warnings.append(&mut warnings_filter);
 
