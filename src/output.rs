@@ -1,10 +1,15 @@
+use std::process::Command;
 use crate::parse::RouteObject;
 use std::time::SystemTime;
 
 
-pub fn output_bird(objects: Vec<RouteObject>) -> String {
+pub fn output_bird(objects: Vec<RouteObject>, base_path: &str) -> String {
     let mut result = format!("# roa_wizard {} - Kioubit.dn42\n", crate::VERSION);
     result.push_str(&format!("# Created: {}\n", get_sys_time_in_secs()));
+    let commit_hash = get_git_commit_hash(base_path);
+    if commit_hash.is_some() {
+        result.push_str(&format!("# Commit: {}\n", commit_hash.unwrap()));
+    }
     for object in objects {
         result.push_str(&object.get_bird_format());
     }
@@ -37,4 +42,17 @@ pub fn output_json(objects: Vec<RouteObject>) -> String {
 
 fn get_sys_time_in_secs() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs()
+}
+
+fn get_git_commit_hash(path: &str) -> Option<String> {
+    let cmd_output = Command::new("git")
+        .arg("log")
+        .arg("-1")
+        .arg("--format=%H")
+        .current_dir(path)
+        .output().ok()?;
+    if !cmd_output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&cmd_output.stdout).to_string())
 }

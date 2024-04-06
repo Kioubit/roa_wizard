@@ -11,9 +11,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 type RouteObjectsWithWarnings = (Vec<RouteObject>, Vec<String>);
 
 pub fn generate_bird(base_path: String, is_v6: bool) -> Result<(String, Vec<String>), String> {
-    let result = process(is_v6, base_path);
+    let result = process(is_v6, base_path.clone());
     let (objects, warnings) = result?;
-    Ok((output_bird(objects), warnings))
+    Ok((output_bird(objects, &base_path), warnings))
 }
 
 pub fn generate_json(base_path: String) -> Result<(String, Vec<String>), String> {
