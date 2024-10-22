@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "roa_wizard"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "cidr-utils",
  "json",

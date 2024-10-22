@@ -1,8 +1,8 @@
 use std::process::exit;
-use roa_wizard_lib::{check_and_output, generate_bird, generate_json, VERSION};
+use roa_wizard_lib::{check_and_output, generate_bird, generate_json, PACKAGE_NAME, VERSION};
 
 fn show_usage() {
-    println!("roa_wizard {}", VERSION);
+    println!("{} {}", PACKAGE_NAME, VERSION);
     println!("Usage: <path to registry root> <action> [flag]");
     println!();
     println!("Where <action>:");
@@ -37,7 +37,7 @@ fn main() {
             check_and_output(generate_json(base_path), strict);
         }
         _ => {
-            println!("unknown argument for <action>");
+            println!("Unknown argument for <action>");
             show_usage();
         }
     }

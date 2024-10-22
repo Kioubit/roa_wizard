@@ -1,10 +1,11 @@
+use std::path::Path;
 use std::process::Command;
 use crate::parse::RouteObject;
 use std::time::SystemTime;
 
 
-pub fn output_bird(objects: Vec<RouteObject>, base_path: &str) -> String {
-    let mut result = format!("# roa_wizard {} - Kioubit.dn42\n", crate::VERSION);
+pub fn output_bird(objects: Vec<RouteObject>, base_path: &Path) -> String {
+    let mut result = format!("# {} {} - Kioubit.dn42\n", crate::PACKAGE_NAME, crate::VERSION);
     result.push_str(&format!("# Created: {}\n", get_sys_time_in_secs()));
     let commit_hash = get_git_commit_hash(base_path);
     if commit_hash.is_some() {
@@ -44,7 +45,7 @@ fn get_sys_time_in_secs() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime before UNIX EPOCH").as_secs()
 }
 
-fn get_git_commit_hash(path: &str) -> Option<String> {
+fn get_git_commit_hash(path: &Path) -> Option<String> {
     let cmd_output = Command::new("git")
         .arg("log")
         .arg("-1")

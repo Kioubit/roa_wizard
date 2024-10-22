@@ -6,9 +6,7 @@ use std::path::Path;
 use std::str::FromStr;
 use cidr_utils::cidr::IpCidr;
 use json::JsonValue;
-use crate::RouteObjectsWithWarnings;
-
-extern crate cidr_utils;
+use crate::{BoxResult, RouteObjectsWithWarnings};
 
 
 pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[FilterSet]) {
@@ -16,8 +14,8 @@ pub fn evaluate_filter_set(object_list: &mut Vec<RouteObject>, filter_set: &[Fil
         let mut filter_set_iter = filter_set.iter();
         let mut bits: u8 = 0;
         let applicable_filter_set = filter_set_iter.find(|f| {
-            if f.prefix.contains(&v.prefix.unwrap().first_address()) && f.prefix.contains(&v.prefix.unwrap().last_address()) {
-                bits = v.prefix.unwrap().network_length();
+            if f.prefix.contains(&v.prefix.first_address()) && f.prefix.contains(&v.prefix.last_address()) {
+                bits = v.prefix.network_length();
                 return true;
             }
             false
@@ -70,7 +68,7 @@ pub struct FilterSet {
 }
 
 impl FilterSet {
-    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>) -> Result<Self, String> {
+    fn new(priority: Option<&str>, allow: Option<&str>, prefix: Option<&str>, min_len: Option<&str>, max_len: Option<&str>) -> BoxResult<Self> {
         let result = Self {
             priority: priority.ok_or("priority value missing")?.parse::<i32>().ok().ok_or("Failed to parse priority as i32")?,
             allow: allow.ok_or("allow value missing")? == "permit",
@@ -82,7 +80,7 @@ impl FilterSet {
     }
 }
 
-pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>), String> {
+pub fn read_filter_set(file: &Path) -> BoxResult<(Vec<FilterSet>, Vec<String>)> {
     let mut warnings: Vec<String> = Vec::new();
     let mut set: Vec<FilterSet> = Vec::new();
     let lines = read_lines(file).map_err(|e|
@@ -121,7 +119,7 @@ pub fn read_filter_set(file: String) -> Result<(Vec<FilterSet>, Vec<String>), St
 
 #[derive(Debug)]
 pub struct RouteObject {
-    prefix: Option<IpCidr>,
+    prefix: IpCidr,
     origins: Vec<String>,
     max_length: Cell<Option<i32>>,
 }
@@ -148,20 +146,23 @@ impl RouteObject {
     }
 
     fn get_prefix_string(&self) -> String {
-        if self.prefix.unwrap().is_host_address() {
-            return if self.prefix.unwrap().is_ipv4() {
-                self.prefix.unwrap().to_string() + "/32"
+        if self.prefix.is_host_address() {
+            return if self.prefix.is_ipv4() {
+                self.prefix.to_string() + "/32"
             } else {
-                self.prefix.unwrap().to_string() + "/128"
-            }
+                self.prefix.to_string() + "/128"
+            };
         }
-        self.prefix.unwrap().to_string()
+        self.prefix.to_string()
     }
 }
 
-pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWithWarnings, String> where P: AsRef<Path> {
+pub fn read_route_objects<P>(path: P, expect_v6: bool) -> BoxResult<RouteObjectsWithWarnings>
+where
+    P: AsRef<Path>,
+{
     #[derive(Debug)]
-    struct RouteObjectBuilder<> {
+    struct RouteObjectBuilder {
         filename: String,
         prefix: Option<String>,
         origins: Vec<String>,
@@ -176,7 +177,7 @@ pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWit
                 max_length: None,
             }
         }
-        fn validate_and_build(mut self, expect_v6: bool) -> Result<RouteObject, String> {
+        fn validate_and_build(mut self, expect_v6: bool) -> BoxResult<RouteObject> {
             if self.origins.is_empty() {
                 return Err("missing origin field in object")?;
             }
@@ -199,7 +200,7 @@ pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWit
 
 
             if self.prefix.is_none() {
-                return Err("missing route field in object")?;
+                return Err("missing route or route6 field in object")?;
             }
             if self.filename.replace('_', "/") != self.prefix.as_deref().unwrap() {
                 return Err("filename does not equal prefix field")?;
@@ -224,7 +225,7 @@ pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWit
             )?;
 
             let result = RouteObject {
-                prefix: Some(prefix),
+                prefix,
                 origins: self.origins,
                 max_length: Cell::new(max_length),
             };
@@ -234,21 +235,21 @@ pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWit
 
     let mut objects: Vec<RouteObject> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
-    let dir = read_dir(path).map_err(|e|
-        format!("Unable to read directory: {}", e)
+    let dir = read_dir(path.as_ref()).map_err(|e|
+        format!("Unable to read directory {}: {}", path.as_ref().display(), e)
     )?;
     for file_result in dir {
         let file = file_result.map_err(|e|
-            format!("Unable to read directory file: {}", e)
+            format!("Unable to read directory file {}: {}", path.as_ref().display(), e)
         )?.path();
         let lines = read_lines(&file).map_err(|e|
-            format!("Unable to open file: {}", e)
+            format!("Unable to open file {}: {}", file.display(), e)
         )?;
         let filename = file.as_path().file_name().unwrap_or_default().to_str().unwrap_or_default().to_owned();
         let mut object = RouteObjectBuilder::new(filename.to_owned());
         for line in lines {
             if let Some(result) = line.map_err(|e|
-                format!("Unable to read file line: {}", e)
+                format!("Unable to read file line {}: {}", file.display(), e)
             )?.split_once(':') {
                 match result.0.trim_end() {
                     "route" => { object.prefix = Some(result.1.trim().to_owned()) }
@@ -273,7 +274,10 @@ pub fn read_route_objects<P>(path: P, expect_v6: bool) -> Result<RouteObjectsWit
 }
 
 
-fn read_lines<P>(path: P) -> io::Result<io::Lines<io::BufReader<File>>> where P: AsRef<Path> {
+fn read_lines<P>(path: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
     let file = File::open(path)?;
     Ok(io::BufReader::new(file).lines())
 }

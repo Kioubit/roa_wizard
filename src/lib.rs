@@ -1,24 +1,30 @@
 mod parse;
 mod output;
 
+use std::error::Error;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use crate::output::{output_bird, output_json};
 use crate::parse::{evaluate_filter_set, read_filter_set, read_route_objects, RouteObject};
-use std::thread;
+use std::{io, thread};
+use std::io::Write;
 use std::thread::JoinHandle;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-type RouteObjectsWithWarnings = (Vec<RouteObject>, Vec<String>);
+pub const PACKAGE_NAME: &str = env!("CARGO_PKG_NAME");
+type Warnings = Vec<String>;
+type RouteObjectsWithWarnings = (Vec<RouteObject>, Warnings);
+type BoxResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-pub fn generate_bird(base_path: String, is_v6: bool) -> Result<(String, Vec<String>), String> {
-    let result = process(is_v6, base_path.clone());
+pub fn generate_bird(base_path: impl AsRef<Path>, is_v6: bool) -> BoxResult<(String, Warnings)> {
+    let result = process(is_v6, base_path.as_ref().into());
     let (objects, warnings) = result?;
-    Ok((output_bird(objects, &base_path), warnings))
+    Ok((output_bird(objects, base_path.as_ref()), warnings))
 }
 
-pub fn generate_json(base_path: String) -> Result<(String, Vec<String>), String> {
-    let handler_v4 = process_handler(false, base_path.to_owned());
-    let handler_v6 = process_handler(true, base_path);
+pub fn generate_json(base_path: impl AsRef<Path>) -> BoxResult<(String, Warnings)> {
+    let handler_v4 = process_handler(false, base_path.as_ref().into());
+    let handler_v6 = process_handler(true, base_path.as_ref().into());
     let f_result_v4 = handler_v4.join().expect("thread failed");
     let f_result_v6 = handler_v6.join().expect("thread failed");
 
@@ -30,40 +36,40 @@ pub fn generate_json(base_path: String) -> Result<(String, Vec<String>), String>
     Ok((output_json(result_v4), warnings_v4))
 }
 
-fn process(is_v6: bool, base_path: String) -> Result<RouteObjectsWithWarnings, String> {
-    let route_directory: String;
-    let filter_txt: String;
+fn process(is_v6: bool, base_path: PathBuf) -> BoxResult<RouteObjectsWithWarnings> {
+    let route_directory: PathBuf;
+    let filter_txt: PathBuf;
     match is_v6 {
         true => {
-            let route6_directory = base_path.to_owned() + "data/route6/";
-            let filter6_txt = base_path + "data/filter6.txt";
+            let route6_directory = base_path.join("data/route6/");
+            let filter6_txt = base_path.join("data/filter6.txt");
             route_directory = route6_directory;
             filter_txt = filter6_txt;
         }
         false => {
-            let route4_directory = base_path.to_owned() + "data/route/";
-            let filter4_txt = base_path + "data/filter.txt";
+            let route4_directory = base_path.join("data/route/");
+            let filter4_txt = base_path.join("data/filter.txt");
             route_directory = route4_directory;
             filter_txt = filter4_txt;
         }
     }
     let (mut objects, mut warnings) = read_route_objects(route_directory, is_v6)?;
-    let (filters, mut warnings_filter) = read_filter_set(filter_txt)?;
+    let (filters, mut warnings_filter) = read_filter_set(&filter_txt)?;
     warnings.append(&mut warnings_filter);
 
     evaluate_filter_set(objects.as_mut(), filters.as_ref());
     Ok((objects, warnings))
 }
 
-fn process_handler(is_v6: bool, base_path: String) -> JoinHandle<Result<RouteObjectsWithWarnings, String>> {
+fn process_handler(is_v6: bool, base_path: PathBuf) -> JoinHandle<BoxResult<RouteObjectsWithWarnings>> {
     thread::spawn(move || {
         process(is_v6, base_path)
     })
 }
 
-pub fn check_and_output(result: Result<(String, Vec<String>), String>, strict: bool) {
-    if result.is_err() {
-        eprintln!("Error: {}", result.unwrap_err());
+pub fn check_and_output(result: BoxResult<(String, Warnings)>, strict: bool) {
+    if let Err(err) = result {
+        eprintln!("Error: {}", err);
         exit(1)
     }
     let (output, warnings) = result.unwrap();
@@ -76,5 +82,5 @@ pub fn check_and_output(result: Result<(String, Vec<String>), String>, strict: b
         eprintln!("Warnings occurred and strict mode is enabled");
         exit(1)
     }
-    print!("{}", output);
+    write!(io::stdout(), "{}", output).ok();
 }

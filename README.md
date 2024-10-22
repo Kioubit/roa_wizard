@@ -19,5 +19,3 @@ Where <flag>:
 - Optional strict mode to abort on errors in registry files
 - Evaluate filter.txt / filter6.txt
 - Focus on reducing execution time
-
-See the releases section for precompiled binaries
