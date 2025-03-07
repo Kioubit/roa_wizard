@@ -119,9 +119,9 @@ pub fn read_filter_set(file: &Path) -> BoxResult<(Vec<FilterSet>, Vec<String>)> 
 
 #[derive(Debug)]
 pub struct RouteObject {
-    prefix: IpCidr,
-    origins: Vec<String>,
-    max_length: Cell<Option<i32>>,
+    pub prefix: IpCidr,
+    pub origins: Vec<String>,
+    pub max_length: Cell<Option<i32>>,
 }
 
 impl RouteObject {

@@ -17,7 +17,7 @@ type RouteObjectsWithWarnings = (Vec<RouteObject>, Warnings);
 type BoxResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub fn generate_bird(base_path: impl AsRef<Path>, is_v6: bool) -> BoxResult<(String, Warnings)> {
-    let result = process(is_v6, base_path.as_ref().into());
+    let result = get_roa_objects(is_v6, base_path.as_ref().into());
     let (objects, warnings) = result?;
     Ok((output_bird(objects, base_path.as_ref()), warnings))
 }
@@ -36,7 +36,7 @@ pub fn generate_json(base_path: impl AsRef<Path>) -> BoxResult<(String, Warnings
     Ok((output_json(result_v4), warnings_v4))
 }
 
-fn process(is_v6: bool, base_path: PathBuf) -> BoxResult<RouteObjectsWithWarnings> {
+pub fn get_roa_objects(is_v6: bool, base_path: PathBuf) -> BoxResult<RouteObjectsWithWarnings> {
     let route_directory: PathBuf;
     let filter_txt: PathBuf;
     match is_v6 {
@@ -63,7 +63,7 @@ fn process(is_v6: bool, base_path: PathBuf) -> BoxResult<RouteObjectsWithWarning
 
 fn process_handler(is_v6: bool, base_path: PathBuf) -> JoinHandle<BoxResult<RouteObjectsWithWarnings>> {
     thread::spawn(move || {
-        process(is_v6, base_path)
+        get_roa_objects(is_v6, base_path)
     })
 }
 
